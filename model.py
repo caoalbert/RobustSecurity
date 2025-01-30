@@ -19,28 +19,29 @@ class ROSecurity:
         x_values = np.arange(0, n_hours_before_depature*60+1, 15)
         total_prob_per_block = []
         for i in range(len(x_values) - 1):
-            total_prob = skewnorm.cdf(x_values[i + 1], 3, loc=93, scale=40) - skewnorm.cdf(x_values[i], 3, loc=93, scale=40)
+            total_prob = skewnorm.cdf(x_values[i + 1], 3, loc=60, scale=30) - skewnorm.cdf(x_values[i], 3, loc=60, scale=30)
             total_prob_per_block.append(total_prob)
         total_prob_per_block = np.array(total_prob_per_block)
         self.pmf = total_prob_per_block / np.sum(total_prob_per_block)
 
 
     def _compute_coef(self, j, flight_depature_time, alpha_it):
-        prev = j - flight_depature_time
+        prev = flight_depature_time - j - 1
         return (1-alpha_it)*self.pmf[prev] * alpha_it
 
 
-    def run(self, capacity, gamma, alpha, sigma, n_neighbor):
+    def run(self, capacity, gamma, alpha, sigma):
         # gamma is the confidence level
         # alpha is the rate of compliance
         # sigma is the standard deviation of the rate of compliance
-        # n_neighbor is the number of neighbors (one-sided) that the assigned passengers can overflow to
         alpha_vector = np.array([alpha]*self.N)
         alpha = np.tile(alpha_vector, (self.n_slots, 1)).T
+        self.alpha = alpha
 
         sigma_matrix = np.zeros((2*self.N, 2*self.N))
         for i in range(self.N):
             sigma_matrix[i, i] = sigma
+        self.sigma = sigma
 
         base_matrix_first_row = [1] + [-i for i in self.pmf]
         base_matrix_second_row = [0] + [i for i in self.pmf]
@@ -85,7 +86,7 @@ class ROSecurity:
         for idx, time in enumerate(self.latest_arrival_time):
             m.addConstr(quicksum(x[idx,j] for j in range(self.n_slots) if (j < time-16) | (j >= time)) == 0)
 
-        m.setObjective(quicksum(x[i,j]*self.cost[i,j] for i in range(self.N) for j in range(self.n_slots)), GRB.MINIMIZE)
+        m.setObjective(quicksum(x[i,j]*self.cost[i,j]*self.diag[i] for i in range(self.N) for j in range(self.n_slots)), GRB.MINIMIZE)
         m.update()
         m.params.NonConvex = 2
         m.params.OutputFlag = 0
