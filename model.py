@@ -19,7 +19,7 @@ class ROSecurity:
         x_values = np.arange(0, n_hours_before_depature*60+1, 15)
         total_prob_per_block = []
         for i in range(len(x_values) - 1):
-            total_prob = skewnorm.cdf(x_values[i + 1], 3, loc=60, scale=30) - skewnorm.cdf(x_values[i], 3, loc=60, scale=30)
+            total_prob = skewnorm.cdf(x_values[i + 1], 3, loc=64, scale=30) - skewnorm.cdf(x_values[i], 3, loc=64, scale=30)
             total_prob_per_block.append(total_prob)
         total_prob_per_block = np.array(total_prob_per_block)
         self.pmf = total_prob_per_block / np.sum(total_prob_per_block)
@@ -27,7 +27,7 @@ class ROSecurity:
 
     def _compute_coef(self, j, flight_depature_time, alpha_it):
         prev = flight_depature_time - j - 1
-        return (1-alpha_it)*self.pmf[prev] * alpha_it
+        return (1-alpha_it)*self.pmf[prev]
 
 
     def run(self, capacity, gamma, alpha, sigma):
@@ -70,9 +70,10 @@ class ROSecurity:
             x_mat = m.addMVar(((1+16)*self.N,), vtype=GRB.CONTINUOUS, name='x_mat')
             m.addConstrs((x_mat[i] == x[i,t] for i in range(self.N)))
 
-            for j in range(16,0,-1):
-                m.addConstrs(x_mat[self.N * (17-j) + i] == x[i, self.latest_arrival_time[i]-j] for i in range(self.N) if self.latest_arrival_time[i]-j >= 0)
-
+            # for j in range(16,0,-1):
+            #     m.addConstrs(x_mat[self.N * (17-j) + i] == x[i, self.latest_arrival_time[i]-j] for i in range(self.N) if self.latest_arrival_time[i]-j >= 0)
+            for j in range(1,17):
+                m.addConstrs(x_mat[self.N * j + i] == x[i, self.latest_arrival_time[i]-j] for i in range(self.N) if self.latest_arrival_time[i]-j >= 0)
             
             m.addConstr(
                 (x_mat.T @ A_mat.T @ self.D.T @ sigma_matrix @ self.D @ A_mat @ x_mat <= rhs[t] * rhs[t])
@@ -80,11 +81,10 @@ class ROSecurity:
 
         for i in tqdm(range(self.N)):
             m.addConstr(quicksum(x[i,j] for j in range(self.n_slots)) == 1)
-        for idx, time in enumerate(self.latest_arrival_time):
-            m.addConstr(quicksum(x[idx,j] for j in range(int(time), int(self.n_slots))) == 0)
 
         for idx, time in enumerate(self.latest_arrival_time):
             m.addConstr(quicksum(x[idx,j] for j in range(self.n_slots) if (j < time-16) | (j >= time)) == 0)
+
 
         m.setObjective(quicksum(x[i,j]*self.cost[i,j]*self.diag[i] for i in range(self.N) for j in range(self.n_slots)), GRB.MINIMIZE)
         m.update()
